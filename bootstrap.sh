@@ -47,7 +47,11 @@ docker cp -q "$tmp/upstream" "$PROXY_NAME:/etc/nginx/upstream"
 rm -rf "$tmp"
 
 echo "==> Starting $PROXY_NAME"
-docker start "$PROXY_NAME" >/dev/null
+# The port check above is an early warning; something can still grab the port after it.
+if ! docker start "$PROXY_NAME" >/dev/null; then
+  echo "ERROR: could not start $PROXY_NAME on port $PORT. Is something else using the port?" >&2
+  exit 1
+fi
 mkdir -p state
 
 echo "==> Saving state"

@@ -9,8 +9,10 @@ import json
 import logging
 import os
 import re
+import signal
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import docker
@@ -39,6 +41,32 @@ log = logging.getLogger("deploy")
 
 class DeployError(Exception):
     """A problem we can explain to the user in one line."""
+
+
+class Interrupted(Exception):
+    """Ctrl+C (SIGINT) or SIGTERM arrived."""
+
+
+_in_cutover = False
+
+
+def on_signal(signum, frame):
+    name = signal.Signals(signum).name
+    if _in_cutover:
+        log.warning("Got %s during cutover. Finishing the cutover first (it takes a few seconds).", name)
+        return
+    raise Interrupted(name)
+
+
+@contextmanager
+def no_interrupts():
+    """Signals inside this block are logged and ignored, so the cutover never stops halfway."""
+    global _in_cutover
+    _in_cutover = True
+    try:
+        yield
+    finally:
+        _in_cutover = False
 
 
 def container_name(version):
@@ -253,11 +281,11 @@ def cutover(client, old_name, new_name, new_version):
     log.info("Cutover done: %s/version returns %s", PUBLIC_URL, new_version)
 
 
-def rollback(candidate):
+def rollback(client, name):
     """Remove the new container. Traffic never left the old one."""
-    log.warning("Rolling back: removing %s", candidate.name)
+    log.warning("Rolling back: removing %s", name)
     try:
-        candidate.remove(force=True)
+        client.containers.get(name).remove(force=True)
     except NotFound:
         pass
 
@@ -296,31 +324,49 @@ def main():
         return EXIT_OK
 
     log.info("Deploying %s (timeout %ss, %s passes)", args.deploy, args.timeout, args.passes)
-    try:
-        ensure_image(client, args.deploy)
-    except DockerException as e:
-        log.error("Could not build image mockapp:%s: %s", args.deploy, e)
-        return EXIT_BAD_INPUT
     old_name = read_upstream(client)
-    candidate = start_candidate(client, args.deploy, args.fail)
+    new_name = container_name(args.deploy)
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
 
-    if not wait_healthy(client, candidate, args.timeout, args.interval, args.passes):
-        rollback(candidate)
+    # Phase 1: start the new version and check it. Traffic stays on the old one.
+    try:
+        try:
+            ensure_image(client, args.deploy)
+        except DockerException as e:
+            log.error("Could not build image mockapp:%s: %s", args.deploy, e)
+            return EXIT_BAD_INPUT
+        candidate = start_candidate(client, args.deploy, args.fail)
+        healthy = wait_healthy(client, candidate, args.timeout, args.interval, args.passes)
+    except Interrupted as e:
+        log.error("Stopped by %s before cutover.", e)
+        rollback(client, new_name)
+        log.error("Deploy of %s CANCELLED. Traffic stayed on %s.", args.deploy, live_version)
+        return EXIT_ROLLED_BACK
+    if not healthy:
+        rollback(client, new_name)
         log.error("Deploy of %s FAILED. Traffic stayed on %s.", args.deploy, live_version)
         return EXIT_ROLLED_BACK
 
-    try:
-        cutover(client, old_name, candidate.name, args.deploy)
-    except DeployError as e:
-        log.error("Cutover failed: %s", e)
-        rollback(candidate)
-        return EXIT_ROLLED_BACK
+    # Phase 2: switch traffic. Signals can't stop this halfway.
+    with no_interrupts():
+        try:
+            cutover(client, old_name, new_name, args.deploy)
+        except DeployError as e:
+            log.error("Cutover failed: %s", e)
+            rollback(client, new_name)
+            return EXIT_ROLLED_BACK
+        write_state(args.deploy)
 
-    write_state(args.deploy)
-    drain_and_remove(client, old_name, args.drain)
+    # Phase 3: remove the old version. The deploy already succeeded.
+    try:
+        drain_and_remove(client, old_name, args.drain)
+    except Interrupted as e:
+        log.warning("Stopped by %s during drain. %s is live. %s is still running; "
+                    "the next run of deploy.py removes it.", e, args.deploy, old_name)
+        return EXIT_OK
     log.info("Deploy of %s SUCCEEDED. %s is live.", args.deploy, args.deploy)
     return EXIT_OK
-
 
 if __name__ == "__main__":
     sys.exit(main())
