@@ -17,7 +17,7 @@ from pathlib import Path
 
 import docker
 import requests
-from docker.errors import DockerException, NotFound
+from docker.errors import APIError, DockerException, NotFound
 
 # Names shared with bootstrap.sh
 ROOT = Path(__file__).resolve().parent
@@ -29,6 +29,7 @@ PUBLIC_URL = "http://localhost:8080"
 STATE_FILE = ROOT / "state" / "active.json"
 LOCK_FILE = ROOT / "state" / "deploy.lock"
 LABELS = {"app": "mockapp", "managed-by": "release-coordinator"}
+OURS = [f"{k}={v}" for k, v in LABELS.items()]  # a container must carry both labels to be ours
 
 # Exit codes
 EXIT_OK = 0
@@ -88,17 +89,30 @@ def version_arg(value):
     return value
 
 
+def number(kind, minimum, strict):
+    """An argparse type: a number of `kind`, above `minimum` (strict) or at least `minimum`."""
+    def parse(value):
+        try:
+            n = kind(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"'{value}' is not a number")
+        if n < minimum or (strict and n == minimum):
+            raise argparse.ArgumentTypeError(f"must be {'greater than' if strict else 'at least'} {minimum}")
+        return n
+    return parse
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="Deploy a new mockapp version with a health gate.")
     p.add_argument("--deploy", required=True, type=version_arg, metavar="VERSION",
                    help="version to deploy, e.g. v2.0.0")
-    p.add_argument("--timeout", type=int, default=30,
+    p.add_argument("--timeout", type=number(int, 0, strict=True), default=30,
                    help="seconds to wait for the new version to become healthy (default 30)")
-    p.add_argument("--interval", type=float, default=2,
+    p.add_argument("--interval", type=number(float, 0, strict=True), default=2,
                    help="seconds between health checks (default 2)")
-    p.add_argument("--passes", type=int, default=3,
+    p.add_argument("--passes", type=number(int, 1, strict=False), default=3,
                    help="health checks in a row that must pass (default 3)")
-    p.add_argument("--drain", type=int, default=5,
+    p.add_argument("--drain", type=number(int, 0, strict=False), default=5,
                    help="seconds to keep the old version after cutover (default 5)")
     p.add_argument("--fail", action="store_true",
                    help="start the new version with FAIL_HEALTHCHECK=true (demo the rollback)")
@@ -197,7 +211,7 @@ def reconcile(client):
     # If an earlier run died after writing the file but before the reload, finish the reload now.
     reload_proxy(client)
 
-    for c in client.containers.list(all=True, filters={"label": "app=mockapp"}):
+    for c in client.containers.list(all=True, filters={"label": OURS}):
         if c.name != live_name:
             log.warning("Removing leftover container %s (from a run that did not finish)", c.name)
             c.remove(force=True)
@@ -230,15 +244,21 @@ def start_candidate(client, version, fail):
     name = container_name(version)
     env = {"FAIL_HEALTHCHECK": "true"} if fail else {}
     log.info("Starting candidate %s%s", name, " with FAIL_HEALTHCHECK=true" if fail else "")
-    return client.containers.run(
-        f"mockapp:{version}",
-        name=name,
-        detach=True,
-        network=NETWORK,
-        environment=env,
-        labels={**LABELS, "version": version},
-        restart_policy={"Name": "unless-stopped"},
-    )
+    try:
+        return client.containers.run(
+            f"mockapp:{version}",
+            name=name,
+            detach=True,
+            network=NETWORK,
+            environment=env,
+            labels={**LABELS, "version": version},
+            restart_policy={"Name": "unless-stopped"},
+        )
+    except APIError as e:
+        if e.status_code == 409:
+            raise DeployError(f"A container named {name} already exists and is not managed by this tool. "
+                              "Rename or remove it, then run again.")
+        raise
 
 
 def wait_healthy(client, candidate, timeout, interval, passes):
@@ -282,9 +302,13 @@ def write_upstream(client, name):
 
 def public_version():
     try:
-        return requests.get(f"{PUBLIC_URL}/version", timeout=2).json().get("version")
+        r = requests.get(f"{PUBLIC_URL}/version", timeout=2)
+        data = r.json()
     except (requests.RequestException, ValueError):
         return None
+    if r.status_code != 200 or not isinstance(data, dict) or not isinstance(data.get("version"), str):
+        return None
+    return data["version"]
 
 
 def cutover(client, old_name, new_name, new_version):
@@ -313,9 +337,13 @@ def rollback(client, name):
     """Remove the new container. Traffic never left the old one."""
     log.warning("Rolling back: removing %s", name)
     try:
-        client.containers.get(name).remove(force=True)
+        container = client.containers.get(name)
     except NotFound:
-        pass
+        return
+    if container.labels.get("managed-by") != LABELS["managed-by"]:
+        log.error("Not removing %s: it is not managed by this tool", name)
+        return
+    container.remove(force=True)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -378,7 +406,11 @@ def main():
         except DockerException as e:
             log.error("Could not build image mockapp:%s: %s", args.deploy, e)
             return EXIT_BAD_INPUT
-        candidate = start_candidate(client, args.deploy, args.fail)
+        try:
+            candidate = start_candidate(client, args.deploy, args.fail)
+        except (DeployError, DockerException) as e:
+            log.error("Could not start %s: %s", new_name, e)
+            return EXIT_BAD_INPUT
         healthy = wait_healthy(client, candidate, args.timeout, args.interval, args.passes)
     except Interrupted as e:
         log.error("Stopped by %s before cutover.", e)
