@@ -39,6 +39,10 @@ EXIT_LOCKED = 3
 log = logging.getLogger("deploy")
 
 
+# ══════════════════════════════════════════════════════════════════
+# Errors and Ctrl+C handling (used in Steps 3–7)
+# ══════════════════════════════════════════════════════════════════
+
 class DeployError(Exception):
     """A problem we can explain to the user in one line."""
 
@@ -69,6 +73,10 @@ def no_interrupts():
         _in_cutover = False
 
 
+# ══════════════════════════════════════════════════════════════════
+# Step 1: read the options
+# ══════════════════════════════════════════════════════════════════
+
 def container_name(version):
     """v2.0.0 -> mockapp-v2-0-0 (no dots in DNS names)."""
     return "mockapp-" + version.replace(".", "-")
@@ -97,6 +105,10 @@ def parse_args():
     return p.parse_args()
 
 
+# ══════════════════════════════════════════════════════════════════
+# Step 2: the lock, and the state file (state is saved in Step 6)
+# ══════════════════════════════════════════════════════════════════
+
 def acquire_lock():
     """Only one deploy at a time. The OS releases the lock if this process dies, even on kill -9."""
     LOCK_FILE.parent.mkdir(exist_ok=True)
@@ -121,6 +133,10 @@ def write_state(version):
     tmp.write_text(json.dumps({"active_version": version, "container": container_name(version)}) + "\n")
     os.replace(tmp, STATE_FILE)
 
+
+# ══════════════════════════════════════════════════════════════════
+# Step 3: check the system, clean up leftovers
+# ══════════════════════════════════════════════════════════════════
 
 def preflight():
     """Check everything bootstrap.sh set up is still there. Change nothing."""
@@ -194,6 +210,10 @@ def reconcile(client):
     return version
 
 
+# ══════════════════════════════════════════════════════════════════
+# Step 5: start the new version and test it
+# ══════════════════════════════════════════════════════════════════
+
 def ensure_image(client, version):
     """Build mockapp:<version> if missing. In real life CI builds it and we pull it from a registry."""
     tag = f"mockapp:{version}"
@@ -248,6 +268,10 @@ def wait_healthy(client, candidate, timeout, interval, passes):
     return False
 
 
+# ══════════════════════════════════════════════════════════════════
+# Step 6: switch traffic to the new version
+# ══════════════════════════════════════════════════════════════════
+
 def write_upstream(client, name):
     """Write a temp file, then mv: an atomic replace inside the proxy container."""
     line = f"server {name}:{APP_PORT};"
@@ -281,6 +305,10 @@ def cutover(client, old_name, new_name, new_version):
     log.info("Cutover done: %s/version returns %s", PUBLIC_URL, new_version)
 
 
+# ══════════════════════════════════════════════════════════════════
+# Rollback: remove the new version (used in Steps 5 and 6)
+# ══════════════════════════════════════════════════════════════════
+
 def rollback(client, name):
     """Remove the new container. Traffic never left the old one."""
     log.warning("Rolling back: removing %s", name)
@@ -289,6 +317,10 @@ def rollback(client, name):
     except NotFound:
         pass
 
+
+# ══════════════════════════════════════════════════════════════════
+# Step 7: remove the old version
+# ══════════════════════════════════════════════════════════════════
 
 def drain_and_remove(client, old_name, drain):
     """Wait for requests still running on the old container, then stop it gracefully."""
@@ -300,16 +332,24 @@ def drain_and_remove(client, old_name, drain):
     log.info("Removed old container %s", old_name)
 
 
+# ══════════════════════════════════════════════════════════════════
+# main(): runs Steps 1–7 in order
+# ══════════════════════════════════════════════════════════════════
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s %(message)s",
                         datefmt="%H:%M:%S")
+
+    # ── Step 1: read the options ──────────────────────────────────
     args = parse_args()
 
+    # ── Step 2: take the lock (one deploy at a time) ──────────────
     lock = acquire_lock()
     if lock is None:
         log.error("Another deploy is running (lock: %s). Try again when it finishes.", LOCK_FILE)
         return EXIT_LOCKED
 
+    # ── Step 3: check the system, clean up leftovers ──────────────
     try:
         client = preflight()
         log.info("Preflight OK: Docker, network %s, proxy %s", NETWORK, PROXY)
@@ -319,6 +359,7 @@ def main():
         return EXIT_BAD_INPUT
     log.info("Live now: %s", live_version)
 
+    # ── Step 4: is this version already live? ─────────────────────
     if args.deploy == live_version:
         log.info("%s is already live. Nothing to do.", args.deploy)
         return EXIT_OK
@@ -329,7 +370,8 @@ def main():
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
-    # Phase 1: start the new version and check it. Traffic stays on the old one.
+    # ── Step 5: start the new version and test it ────────────────
+    #    The old version still gets all the traffic.
     try:
         try:
             ensure_image(client, args.deploy)
@@ -348,7 +390,8 @@ def main():
         log.error("Deploy of %s FAILED. Traffic stayed on %s.", args.deploy, live_version)
         return EXIT_ROLLED_BACK
 
-    # Phase 2: switch traffic. Signals can't stop this halfway.
+    # ── Step 6: switch traffic to the new version ─────────────────
+    #    Ctrl+C can't stop this halfway.
     with no_interrupts():
         try:
             cutover(client, old_name, new_name, args.deploy)
@@ -358,7 +401,8 @@ def main():
             return EXIT_ROLLED_BACK
         write_state(args.deploy)
 
-    # Phase 3: remove the old version. The deploy already succeeded.
+    # ── Step 7: remove the old version ────────────────────────────
+    #    The new version is already live.
     try:
         drain_and_remove(client, old_name, args.drain)
     except Interrupted as e:
