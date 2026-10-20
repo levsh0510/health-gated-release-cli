@@ -14,7 +14,7 @@ Design and reasoning: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Requirements
 
-Docker (running), Python 3.10+, macOS or Linux, free port 8080.
+Docker (running), Python 3.10+, Bash, `curl`, `lsof`, macOS or Linux, free port 8080.
 
 ## Install
 
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 curl localhost:8080/version      # {"version":"v1.0.0"}
 ```
 
-Safe to run again: it resets everything to a clean v1.0.0.
+Safe to run again: it resets everything to a clean v1.0.0. Do not run `bootstrap.sh` or `teardown.sh` while a deploy is running.
 
 ## 2. Successful deploy
 
@@ -50,14 +50,15 @@ echo $?                          # 1
 curl localhost:8080/version      # still v2.0.0
 ```
 
-## 4. Prove zero downtime (optional)
+## 4. Check for downtime (optional)
 
 ```bash
 python scripts/traffic_test.py --seconds 25 &
 sleep 1; python deploy.py --deploy v3.0.0; wait
 ```
 
-Result in my test: `401 requests, 0 failed`.
+The script sends a request every 50 ms and counts failures. In my tests: about 400 requests, 0 failed.
+It is a continuity check for simple requests, not a proof for every kind of long connection.
 
 ## 5. Clean up
 
@@ -84,6 +85,7 @@ Removes the containers, the `release-net` network, the `mockapp` images and the 
 | 1 | Deploy failed or cancelled. New container removed. Traffic stayed on the old version. |
 | 2 | Bad input, or the system is not ready. Nothing was changed. |
 | 3 | Another deploy is running |
+| 4 | The switch failed and the old version could not be proven public again. Both containers are kept; the log shows what to check. |
 
 ## Edge cases
 
@@ -95,7 +97,9 @@ Removes the containers, the `release-net` network, the `mockapp` images and the 
 | `kill -9` in the middle | The next run removes the leftover container first |
 | Two deploys at once | The second exits with 3 (`flock`) |
 | Port 8080 already in use | `bootstrap.sh` stops and names the program |
-| Switch not visible from outside | Switch back, remove the new container, exit 1 |
+| Switch not visible from outside | Switch back, check the old version is public, then remove the new container, exit 1 |
+| Switch back cannot be checked | Keep both containers, print what to check, exit 4 |
+| A container that is not ours | Never removed. Only containers with both our labels are touched. |
 
 ## Testing notes
 
