@@ -36,6 +36,7 @@ EXIT_OK = 0
 EXIT_ROLLED_BACK = 1
 EXIT_BAD_INPUT = 2
 EXIT_LOCKED = 3
+EXIT_ROUTING_UNCLEAR = 4  # could not prove which version is live; both containers were kept
 
 log = logging.getLogger("deploy")
 
@@ -46,6 +47,10 @@ log = logging.getLogger("deploy")
 
 class DeployError(Exception):
     """A problem we can explain to the user in one line."""
+
+
+class RoutingUnclear(Exception):
+    """We changed Nginx and could not prove which version it serves now."""
 
 
 class Interrupted(Exception):
@@ -211,12 +216,16 @@ def reconcile(client):
     # If an earlier run died after writing the file but before the reload, finish the reload now.
     reload_proxy(client)
 
+    version = live.labels.get("version")
+    if not version or not wait_for_public_version(version):
+        raise DeployError(f"{PUBLIC_URL}/version does not show {version}, so no container was removed. "
+                          "Check by hand, or run ./bootstrap.sh to reset.")
+
     for c in client.containers.list(all=True, filters={"label": OURS}):
         if c.name != live_name:
             log.warning("Removing leftover container %s (from a run that did not finish)", c.name)
             c.remove(force=True)
 
-    version = live.labels["version"]
     state = read_state()
     if not state or state.get("container") != live_name:
         log.warning("State file was out of date; fixing it to %s", version)
@@ -311,21 +320,36 @@ def public_version():
     return data["version"]
 
 
-def cutover(client, old_name, new_name, new_version):
-    """Send traffic to the new container, then prove it from outside. On any problem, switch back."""
-    write_upstream(client, new_name)
+def wait_for_public_version(version, tries=5):
+    """True when localhost:8080/version shows `version`. Old Nginx workers can answer for a moment after a reload."""
+    for _ in range(tries):
+        if public_version() == version:
+            return True
+        time.sleep(1)
+    return False
+
+
+def cutover(client, old_name, new_name, new_version, old_version):
+    """Send traffic to the new container and prove it from outside.
+
+    On a problem, switch back and prove the old version is public again. Raises DeployError when the
+    switch back is proven (safe to remove the new container) and RoutingUnclear when it is not.
+    """
     try:
+        write_upstream(client, new_name)
         reload_proxy(client)
-        for _ in range(5):  # old Nginx workers can answer for a moment after the reload
-            if public_version() == new_version:
-                break
-            time.sleep(1)
-        else:
+        if not wait_for_public_version(new_version):
             raise DeployError(f"{PUBLIC_URL}/version does not return {new_version} after cutover")
-    except DeployError:
-        write_upstream(client, old_name)
-        reload_proxy(client)
-        raise
+    except (DeployError, DockerException) as problem:
+        log.error("Cutover problem: %s. Switching back to %s.", problem, old_name)
+        try:
+            write_upstream(client, old_name)
+            reload_proxy(client)
+        except (DeployError, DockerException) as e:
+            raise RoutingUnclear(f"could not switch back: {e}")
+        if not wait_for_public_version(old_version):
+            raise RoutingUnclear(f"{PUBLIC_URL}/version does not show {old_version} after switching back")
+        raise DeployError(str(problem))
     log.info("Cutover done: %s/version returns %s", PUBLIC_URL, new_version)
 
 
@@ -426,12 +450,21 @@ def main():
     #    Ctrl+C can't stop this halfway.
     with no_interrupts():
         try:
-            cutover(client, old_name, new_name, args.deploy)
+            cutover(client, old_name, new_name, args.deploy, live_version)
+        except RoutingUnclear as e:
+            log.error("ROUTING UNCLEAR: %s. Both containers are kept.", e)
+            log.error("Check what is live:  curl %s/version  and  docker ps", PUBLIC_URL)
+            log.error("Reset to a clean v1.0.0:  ./bootstrap.sh  (this removes both containers)")
+            return EXIT_ROUTING_UNCLEAR
         except DeployError as e:
             log.error("Cutover failed: %s", e)
             rollback(client, new_name)
+            log.error("Deploy of %s FAILED. Traffic is back on %s.", args.deploy, live_version)
             return EXIT_ROLLED_BACK
-        write_state(args.deploy)
+        try:
+            write_state(args.deploy)
+        except OSError as e:
+            log.warning("Could not save state (%s). %s is live; the next run repairs the state file.", e, args.deploy)
 
     # ── Step 7: remove the old version ────────────────────────────
     #    The new version is already live.
@@ -440,6 +473,10 @@ def main():
     except Interrupted as e:
         log.warning("Stopped by %s during drain. %s is live. %s is still running; "
                     "the next run of deploy.py removes it.", e, args.deploy, old_name)
+        return EXIT_OK
+    except DockerException as e:
+        log.warning("%s is live, but removing the old container %s failed: %s. "
+                    "The next run of deploy.py removes it.", args.deploy, old_name, e)
         return EXIT_OK
     log.info("Deploy of %s SUCCEEDED. %s is live.", args.deploy, args.deploy)
     return EXIT_OK
