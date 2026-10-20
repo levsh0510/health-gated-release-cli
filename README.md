@@ -60,7 +60,24 @@ sleep 1; python deploy.py --deploy v3.0.0; wait
 The script sends a request every 50 ms and counts failures. In my tests: about 400 requests, 0 failed.
 It is a continuity check for simple requests, not a proof for every kind of long connection.
 
-## 5. Clean up
+## 5. Run the automated test (optional)
+
+```bash
+./scripts/integration_test.sh
+```
+
+It takes about a minute and runs 8 checks: clean start, baseline and loopback-only port, an unrelated
+container is not removed, bad options change nothing, a deploy under traffic (v1 to v2), a name conflict is
+refused, a failed deploy rolls back, and teardown leaves nothing behind. Each check prints PASS or FAIL.
+
+Before you run it:
+- It **removes your running demo**. It runs `teardown.sh` at the start and again at the end, so start your own
+  demo after it finishes.
+- It needs the `.venv` from the install steps.
+- It covers the main flow only. Ctrl+C and `kill`, `kill -9`, two deploys at once, port 8080 in use, and a
+  stopped proxy are not in the script. They were tested by hand.
+
+## 6. Clean up
 
 ```bash
 ./teardown.sh
@@ -104,8 +121,9 @@ Removes the containers labeled `managed-by=release-coordinator`, the `release-ne
 
 ## Testing notes
 
-Every case above was run by hand, then again from a fresh clone of the repo. A separate review of the
-repo found more problems. All of these were found by testing and fixed:
+The main flow runs automatically in `scripts/integration_test.sh`. The other cases above were run by hand,
+and all of them again from a fresh clone of the repo. A separate review of the repo found more problems.
+All of these were found by testing and fixed:
 
 | Problem | Fix |
 |---|---|
