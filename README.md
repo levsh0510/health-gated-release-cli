@@ -103,13 +103,18 @@ Removes the containers, the `release-net` network, the `mockapp` images and the 
 
 ## Testing notes
 
-All cases above were run by hand. Two real problems showed up and were fixed:
+Every case above was run by hand, then again from a fresh clone of the repo. A separate review of the
+repo found more problems. All of these were found by testing and fixed:
 
-- **Stale Nginx config.** The upstream file was mounted from my Mac, and Docker Desktop showed Nginx an old
-  copy. Fix: the file now lives inside the proxy container, and every switch is checked from outside
-  (`localhost:8080/version` must return the new version).
-- **Port race.** Another program took port 8080 between the check and the start. Docker refused the port.
-  Fix: `bootstrap.sh` now prints a clear error and exits 1.
+| Problem | Fix |
+|---|---|
+| Nginx served a stale config: Docker Desktop showed it an old copy of a mounted file | The config lives inside the proxy container. Every switch is checked from outside (`localhost:8080/version`). |
+| Another program took port 8080 between the port check and the start | `bootstrap.sh` prints a clear error and exits 1 |
+| `docker cp` into a container with a file mount fails on newer Docker | No mounts. Both config files are copied in. |
+| Cleanup removed any container labeled `app=mockapp`, even one that is not ours | A container must carry both of our labels |
+| `--drain -1` switched traffic, then crashed | Option values are checked first, exit 2 |
+| A failed switch-back could delete the live container | Prove the old version is public first. If not, keep both and exit 4. |
+| The proxy port was open to the whole network | Published on 127.0.0.1 only |
 
 ## Limitations
 
