@@ -32,7 +32,7 @@ docker run -d --name "$APP_NAME" --network "$NETWORK" --restart unless-stopped \
   "mockapp:$VERSION" >/dev/null
 
 echo "==> Creating $PROXY_NAME on localhost:$PORT"
-docker create --name "$PROXY_NAME" --network "$NETWORK" -p "$PORT:80" --restart unless-stopped \
+docker create --name "$PROXY_NAME" --network "$NETWORK" -p "127.0.0.1:$PORT:80" --restart unless-stopped \
   --label managed-by=release-coordinator --label role=proxy \
   nginx:1.27-alpine >/dev/null
 
