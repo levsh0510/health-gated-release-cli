@@ -7,6 +7,7 @@ import argparse
 import fcntl
 import json
 import logging
+import math
 import os
 import re
 import signal
@@ -101,6 +102,8 @@ def number(kind, minimum, strict):
             n = kind(value)
         except ValueError:
             raise argparse.ArgumentTypeError(f"'{value}' is not a number")
+        if kind is float and not math.isfinite(n):  # nan and inf pass every comparison below
+            raise argparse.ArgumentTypeError(f"'{value}' is not a finite number")
         if n < minimum or (strict and n == minimum):
             raise argparse.ArgumentTypeError(f"must be {'greater than' if strict else 'at least'} {minimum}")
         return n
@@ -248,6 +251,16 @@ def ensure_image(client, version):
         client.images.build(path=str(ROOT / "app"), tag=tag, buildargs={"APP_VERSION": version}, rm=True)
 
 
+def check_name_free(client, name):
+    """A leftover of ours was already removed by reconcile, so any container with this name is not ours."""
+    try:
+        client.containers.get(name)
+    except NotFound:
+        return
+    raise DeployError(f"A container named {name} already exists and is not managed by this tool. "
+                      "Rename or remove it, then run again.")
+
+
 def start_candidate(client, version, fail):
     """Start the new version next to the old one. No host port, so it can't conflict with anything."""
     name = container_name(version)
@@ -357,17 +370,25 @@ def cutover(client, old_name, new_name, new_version, old_version):
 # Rollback: remove the new version (used in Steps 5 and 6)
 # ══════════════════════════════════════════════════════════════════
 
-def rollback(client, name):
-    """Remove the new container. Traffic never left the old one."""
+def rollback(client, name, version):
+    """Remove the new container. Traffic never left the old one.
+
+    Looks the container up by name (it may exist before containers.run() returns), but removes it only
+    if it carries both our labels and this version.
+    """
     log.warning("Rolling back: removing %s", name)
     try:
         container = client.containers.get(name)
+        labels = container.labels
+        if not (labels.get("app") == LABELS["app"] and labels.get("managed-by") == LABELS["managed-by"]
+                and labels.get("version") == version):
+            log.error("Not removing %s: it was not created by this tool for %s", name, version)
+            return
+        container.remove(force=True)
     except NotFound:
         return
-    if container.labels.get("managed-by") != LABELS["managed-by"]:
-        log.error("Not removing %s: it is not managed by this tool", name)
-        return
-    container.remove(force=True)
+    except DockerException as e:
+        log.error("Could not remove %s: %s. Remove it by hand:  docker rm -f %s", name, e, name)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -426,7 +447,11 @@ def main():
     #    The old version still gets all the traffic.
     try:
         try:
+            check_name_free(client, new_name)
             ensure_image(client, args.deploy)
+        except DeployError as e:
+            log.error("Could not start %s: %s", new_name, e)
+            return EXIT_BAD_INPUT
         except DockerException as e:
             log.error("Could not build image mockapp:%s: %s", args.deploy, e)
             return EXIT_BAD_INPUT
@@ -436,13 +461,19 @@ def main():
             log.error("Could not start %s: %s", new_name, e)
             return EXIT_BAD_INPUT
         healthy = wait_healthy(client, candidate, args.timeout, args.interval, args.passes)
+    except DockerException as e:
+        log.error("The health check could not finish: %s", getattr(e, "explanation", None) or e)
+        rollback(client, new_name, args.deploy)
+        log.error("Deploy of %s FAILED. %s was not changed. If the proxy is down, start it "
+                  "(docker start %s) and run again.", args.deploy, live_version, PROXY)
+        return EXIT_ROLLED_BACK
     except Interrupted as e:
         log.error("Stopped by %s before cutover.", e)
-        rollback(client, new_name)
+        rollback(client, new_name, args.deploy)
         log.error("Deploy of %s CANCELLED. Traffic stayed on %s.", args.deploy, live_version)
         return EXIT_ROLLED_BACK
     if not healthy:
-        rollback(client, new_name)
+        rollback(client, new_name, args.deploy)
         log.error("Deploy of %s FAILED. Traffic stayed on %s.", args.deploy, live_version)
         return EXIT_ROLLED_BACK
 
@@ -458,7 +489,7 @@ def main():
             return EXIT_ROUTING_UNCLEAR
         except DeployError as e:
             log.error("Cutover failed: %s", e)
-            rollback(client, new_name)
+            rollback(client, new_name, args.deploy)
             log.error("Deploy of %s FAILED. Traffic is back on %s.", args.deploy, live_version)
             return EXIT_ROLLED_BACK
         try:
