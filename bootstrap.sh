@@ -34,15 +34,16 @@ docker run -d --name "$APP_NAME" --network "$NETWORK" --restart unless-stopped \
 echo "==> Creating $PROXY_NAME on localhost:$PORT"
 docker create --name "$PROXY_NAME" --network "$NETWORK" -p "$PORT:80" --restart unless-stopped \
   --label managed-by=release-coordinator --label role=proxy \
-  -v "$PWD/proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   nginx:1.27-alpine >/dev/null
 
-echo "==> Pointing the proxy at $APP_NAME"
-# The upstream file lives inside the proxy, not on a bind mount: Docker Desktop's file
-# sharing can show the container a stale copy after the file changes on the host.
+echo "==> Copying the config into the proxy and pointing it at $APP_NAME"
+# No bind mounts: both files are copied into the container. Docker Desktop's file sharing
+# can show a container a stale copy of a host file, and newer Docker versions reject
+# `docker cp` into a container that has a file bind mount.
 tmp=$(mktemp -d)
 mkdir "$tmp/upstream"
 echo "server ${APP_NAME}:5000;" > "$tmp/upstream/active.conf"
+docker cp -q proxy/nginx.conf "$PROXY_NAME:/etc/nginx/conf.d/default.conf"
 docker cp -q "$tmp/upstream" "$PROXY_NAME:/etc/nginx/upstream"
 rm -rf "$tmp"
 
