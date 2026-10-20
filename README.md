@@ -66,7 +66,7 @@ It is a continuity check for simple requests, not a proof for every kind of long
 ./teardown.sh
 ```
 
-Removes the containers, the `release-net` network, the `mockapp` images and the `state/` folder.
+Removes the containers labeled `managed-by=release-coordinator`, the `release-net` network, the `mockapp` images and the `state/` folder.
 
 ## Options and exit codes
 
@@ -99,7 +99,8 @@ Removes the containers, the `release-net` network, the `mockapp` images and the 
 | Port 8080 already in use | `bootstrap.sh` stops and names the program |
 | Switch not visible from outside | Switch back, check the old version is public, then remove the new container, exit 1 |
 | Switch back cannot be checked | Keep both containers, print what to check, exit 4 |
-| A container that is not ours | Never removed. Only containers with both our labels are touched. |
+| Docker or the proxy fails during the health check | Remove the new container, say what to restart, exit 1 |
+| A container that is not ours | Not removed. Cleanup needs our labels (`managed-by=release-coordinator`, and `app=mockapp` for app containers). Rollback also checks the version. |
 
 ## Testing notes
 
@@ -115,6 +116,9 @@ repo found more problems. All of these were found by testing and fixed:
 | `--drain -1` switched traffic, then crashed | Option values are checked first, exit 2 |
 | A failed switch-back could delete the live container | Prove the old version is public first. If not, keep both and exit 4. |
 | The proxy port was open to the whole network | Published on 127.0.0.1 only |
+| Ctrl+C during the image build could remove a container that has the same name | The name is checked before the build. Rollback removes only a container with our labels and the right version. |
+| Stopping the proxy during the health check gave a traceback and left the new container running | Docker errors are caught: remove the new container, say what to restart, exit 1 |
+| `--interval nan` passed the checks, then crashed | `nan` and `inf` are rejected, exit 2 |
 
 ## Limitations
 
