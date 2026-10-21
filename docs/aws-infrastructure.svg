@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" width="1000" height="650" role="img">
+<title>AWS infrastructure</title>
+<desc>Users reach an Application Load Balancer in public subnets through Route 53 and the internet gateway. The ALB sends traffic to Fargate tasks in private subnets, which have no route to the internet. The tasks reach ECR, Secrets Manager, CloudWatch and S3 only through VPC endpoints.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9z" fill="#5f5e5a"/></marker></defs>
+<rect width="1000" height="650" fill="#ffffff"/>
+<rect x="280" y="20" width="570" height="610" rx="8" fill="none" stroke="#7AA116" stroke-width="2"/>
+<text x="292" y="37" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#3B6D11" text-anchor="start">VPC</text>
+<rect x="298" y="48" width="534" height="140" rx="8" fill="#F5F9EC" stroke="#7AA116" stroke-width="1.5"/>
+<text x="310" y="66" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#3B6D11" text-anchor="start">Public subnets, 2 AZs</text>
+<text x="310" y="80" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#3B6D11" text-anchor="start">Security group: 443 from the internet</text>
+<rect x="298" y="222" width="534" height="248" rx="8" fill="#EEF5FB" stroke="#147EBA" stroke-width="1.5"/>
+<text x="310" y="420" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#0C447C" text-anchor="start">Private subnets, 2 AZs</text>
+<text x="310" y="434" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#0C447C" text-anchor="start">No route to the internet, no NAT gateway</text>
+<text x="310" y="448" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#0C447C" text-anchor="start">Security group: port 5000 from the ALB only</text>
+<rect x="8" y="70" width="56" height="56" rx="6" fill="#3d3d3a"/>
+<text x="36" y="104" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">USR</text>
+<text x="36" y="142" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Users</text>
+<rect x="90" y="70" width="56" height="56" rx="6" fill="#8C4FFF"/>
+<text x="118" y="104" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">R53</text>
+<text x="118" y="142" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Route 53</text>
+<text x="118" y="157" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">alias record</text>
+<rect x="186" y="70" width="56" height="56" rx="6" fill="#8C4FFF"/>
+<text x="214" y="104" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">IGW</text>
+<text x="214" y="142" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Internet gateway</text>
+<text x="214" y="157" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">public only</text>
+<rect x="542" y="70" width="56" height="56" rx="6" fill="#8C4FFF"/>
+<text x="570" y="104" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">ALB</text>
+<text x="570" y="142" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Application Load Balancer</text>
+<text x="570" y="157" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">HTTPS, target group</text>
+<rect x="382" y="246" width="56" height="56" rx="6" fill="#ED7100"/>
+<text x="410" y="280" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">ECS</text>
+<text x="410" y="318" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Fargate task</text>
+<text x="410" y="333" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">AZ a, port 5000</text>
+<rect x="622" y="246" width="56" height="56" rx="6" fill="#ED7100"/>
+<text x="650" y="280" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">ECS</text>
+<text x="650" y="318" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Fargate task</text>
+<text x="650" y="333" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">AZ b, port 5000</text>
+<rect x="100" y="246" width="56" height="56" rx="6" fill="#DD344C"/>
+<text x="128" y="280" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">IAM</text>
+<text x="128" y="318" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">IAM roles</text>
+<text x="128" y="333" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">task and execution roles</text>
+<rect x="692" y="366" width="56" height="56" rx="6" fill="#8C4FFF"/>
+<text x="720" y="400" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">VPE</text>
+<text x="720" y="438" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Interface endpoints</text>
+<text x="720" y="453" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">ECR api + dkr, Logs, Secrets Manager</text>
+<rect x="692" y="496" width="56" height="56" rx="6" fill="#7AA116"/>
+<text x="720" y="530" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">S3</text>
+<text x="720" y="568" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">S3 gateway endpoint</text>
+<text x="720" y="583" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">route table entry</text>
+<rect x="897" y="230" width="56" height="56" rx="6" fill="#ED7100"/>
+<text x="925" y="264" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">ECR</text>
+<text x="925" y="302" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">ECR</text>
+<text x="925" y="317" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">container images</text>
+<rect x="897" y="330" width="56" height="56" rx="6" fill="#DD344C"/>
+<text x="925" y="364" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">SM</text>
+<text x="925" y="402" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">Secrets Manager</text>
+<text x="925" y="417" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">KMS encrypted</text>
+<rect x="897" y="430" width="56" height="56" rx="6" fill="#E7157B"/>
+<text x="925" y="464" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">CW</text>
+<text x="925" y="502" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">CloudWatch</text>
+<text x="925" y="517" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">logs and metrics</text>
+<rect x="897" y="530" width="56" height="56" rx="6" fill="#7AA116"/>
+<text x="925" y="564" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">S3</text>
+<text x="925" y="602" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#2c2c2a" text-anchor="middle">S3</text>
+<text x="925" y="617" font-family="Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#5f5e5a" text-anchor="middle">image layers</text>
+<path d="M66 98 H86" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M150 98 H182" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M246 98 H540" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M550 172 L416 244" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M590 172 L644 244" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M158 274 H380" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<path d="M652 344 L702 364" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<path d="M432 344 L690 392" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<path d="M752 388 L895 258" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<path d="M752 394 L895 358" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<path d="M752 400 L895 458" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<path d="M752 524 L895 558" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+</svg>

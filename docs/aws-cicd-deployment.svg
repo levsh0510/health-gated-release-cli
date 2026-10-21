@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 300" width="1020" height="300" role="img">
+<title>CI/CD and canary deployment</title>
+<desc>CI pushes the image and starts CodeDeploy. Green tasks start next to blue. If the green tasks do not pass the ALB health check, roll back. If they pass, 10 percent of traffic goes to green for 5 minutes. If the 5xx alarm fires, roll back: all traffic to blue, green removed, the CI job fails. If not, 100 percent goes to green and blue is stopped.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9z" fill="#5f5e5a"/></marker></defs>
+<rect width="1020" height="300" fill="#ffffff"/>
+<rect x="20" y="178" width="110" height="64" rx="6" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="75.0" y="199.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">CI pushes image</text>
+<text x="75.0" y="214.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">and starts</text>
+<text x="75.0" y="230.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">CodeDeploy</text>
+<rect x="160" y="178" width="120" height="64" rx="6" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="220.0" y="206.8" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">Green tasks start</text>
+<text x="220.0" y="222.2" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">next to blue</text>
+<polygon points="385,145.0 460.0,210 385,275.0 310.0,210" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="385" y="199.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">Green tasks pass</text>
+<text x="385" y="214.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">the ALB health</text>
+<text x="385" y="230.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">check?</text>
+<rect x="490" y="178" width="110" height="64" rx="6" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="545.0" y="199.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">Canary: 10% of</text>
+<text x="545.0" y="214.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">traffic to green</text>
+<text x="545.0" y="230.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">for 5 min</text>
+<polygon points="685,167.0 740.0,210 685,253.0 630.0,210" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="685" y="206.8" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">5xx alarm</text>
+<text x="685" y="222.2" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">in ALARM?</text>
+<rect x="770" y="186" width="105" height="48" rx="6" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="822.5" y="214.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">100% to green</text>
+<rect x="905" y="186" width="90" height="48" rx="6" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="950.0" y="206.8" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">Wait, then</text>
+<text x="950.0" y="222.2" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">stop blue</text>
+<rect x="700" y="40" width="215" height="60" rx="6" fill="#f1efe8" stroke="#888780" stroke-width="1.5"/>
+<text x="807.5" y="66.8" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">Roll back: all traffic to blue,</text>
+<text x="807.5" y="82.2" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#2c2c2a" text-anchor="middle">remove green, CI job fails</text>
+<path d="M130 210 H158" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M280 210 H308" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M460 210 H488" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="474" y="202" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#5f5e5a" text-anchor="middle">yes</text>
+<path d="M385 145 V70 H698" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="545" y="62" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#5f5e5a" text-anchor="middle">no</text>
+<path d="M600 210 H628" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M714 188 L762 102" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="752" y="150" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#5f5e5a" text-anchor="start">yes</text>
+<path d="M740 210 H768" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="754" y="202" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#5f5e5a" text-anchor="middle">no</text>
+<path d="M875 210 H903" fill="none" stroke="#5f5e5a" stroke-width="1.5" marker-end="url(#a)"/>
+</svg>
