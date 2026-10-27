@@ -60,7 +60,9 @@ sleep 1; python deploy.py --deploy v3.0.0; wait
 The script sends a request every 50 ms and counts failures. In my tests: about 400 requests, 0 failed.
 It is a continuity check for simple requests, not a proof for every kind of long connection.
 
-## 5. Run the automated test (optional)
+## 5. Tests
+
+### 5a. Automated: the main flow
 
 ```bash
 ./scripts/integration_test.sh
@@ -70,12 +72,101 @@ It takes about a minute and runs 8 checks: clean start, baseline and loopback-on
 container is not removed, bad options change nothing, a deploy under traffic (v1 to v2), a name conflict is
 refused, a failed deploy rolls back, and teardown leaves nothing behind. Each check prints PASS or FAIL.
 
-Before you run it:
-- It **removes your running demo**. It runs `teardown.sh` at the start and again at the end, so start your own
-  demo after it finishes.
+- It **removes your running demo**. It runs `teardown.sh` at the start and again at the end.
 - It needs the `.venv` from the install steps.
-- It covers the main flow only. Ctrl+C and `kill`, `kill -9`, two deploys at once, port 8080 in use, and a
-  stopped proxy are not in the script. They were tested by hand.
+
+### 5b. By hand: the cases the script does not cover
+
+Use a terminal with the venv active (`source .venv/bin/activate`). The first run of a new version builds its
+image, which takes a few seconds. Start from a clean baseline with v2 live:
+
+```bash
+./bootstrap.sh
+python deploy.py --deploy v2.0.0
+```
+
+**1. Ctrl+C during a deploy.** Run it, and press Ctrl+C after two or three "Health check failed" lines:
+
+```bash
+python deploy.py --deploy v3.0.0 --fail --timeout 60
+```
+
+Expect: "Stopped by SIGINT before cutover" (it starts right after the `^C`, on the same line), then
+"Rolling back", then "CANCELLED. Traffic stayed on v2.0.0".
+
+Right after it, check the exit code, the running containers and the live version:
+
+```bash
+echo $?; docker ps --format '{{.Names}}'; curl localhost:8080/version
+```
+
+Expect: `1`, then only `mockapp-v2-0-0` and `release-proxy` (the new container is gone), then
+`{"version":"v2.0.0"}`.
+
+**2. `kill` (SIGTERM) during a deploy:**
+
+```bash
+python deploy.py --deploy v3.0.0 --fail --timeout 60 & sleep 5; kill -TERM $!; wait $!; echo "exit=$?"
+```
+
+Expect: "Stopped by SIGTERM before cutover", "CANCELLED", `exit=1`.
+
+**3. `kill -9`, then run again.** `kill -9` cannot be caught, so a leftover container stays:
+
+```bash
+python deploy.py --deploy v3.0.0 --fail --timeout 60 & sleep 5; kill -9 $!; sleep 1; docker ps --format '{{.Names}}'
+```
+
+Expect: `mockapp-v3-0-0` is in the list (the leftover). Now run the same deploy again, without `--fail`:
+
+```bash
+python deploy.py --deploy v3.0.0
+```
+
+Expect: "Removing leftover container mockapp-v3-0-0", then "SUCCEEDED. v3.0.0 is live".
+
+**4. The version is already live:**
+
+```bash
+python deploy.py --deploy v3.0.0; echo "exit=$?"
+```
+
+Expect: "v3.0.0 is already live. Nothing to do.", `exit=0`.
+
+**5. Two deploys at once:**
+
+```bash
+python deploy.py --deploy v4.0.0 --fail --timeout 15 & sleep 3; python deploy.py --deploy v4.0.0; echo "second deploy exit=$?"; wait
+```
+
+Expect: the second one prints "Another deploy is running" and `second deploy exit=3`. The first one then ends
+with "FAILED. Traffic stayed on v3.0.0".
+
+**6. The proxy stops during the health check:**
+
+```bash
+python deploy.py --deploy v4.0.0 --passes 50 --interval 1 --timeout 60 & sleep 6; docker stop release-proxy; wait $!; echo "exit=$?"; docker start release-proxy
+```
+
+Expect: "The health check could not finish: Container ... is not running", "FAILED. v3.0.0 was not changed. If
+the proxy is down, start it (docker start release-proxy)", `exit=1`. No traceback, and `v4` is removed.
+
+**7. The proxy is stopped before the deploy:**
+
+```bash
+docker stop release-proxy; python deploy.py --deploy v4.0.0; echo "exit=$?"; docker start release-proxy
+```
+
+Expect: "Preflight failed: Proxy release-proxy is exited, not running", `exit=2`. Nothing was changed.
+
+**8. Port 8080 is already in use:**
+
+```bash
+./teardown.sh; python3 -m http.server 8080 --bind 127.0.0.1 >/dev/null 2>&1 & sleep 2; ./bootstrap.sh; echo "bootstrap exit=$?"; kill $!
+```
+
+Expect: "ERROR: port 8080 is already in use:", the line of the program that uses it (`Python`), and
+`bootstrap exit=1`. Run `./bootstrap.sh` again to get the baseline back.
 
 ## 6. Clean up
 
@@ -121,8 +212,8 @@ Removes the containers labeled `managed-by=release-coordinator`, the `release-ne
 
 ## Testing notes
 
-The main flow runs automatically in `scripts/integration_test.sh`. The other cases above were run by hand,
-and all of them again from a fresh clone of the repo. A separate review of the repo found more problems.
+The main flow runs in `scripts/integration_test.sh`. The other cases are the commands in section 5b, run by
+hand, and all of them again from a fresh clone of the repo. A separate review of the repo found more problems.
 All of these were found by testing and fixed:
 
 | Problem | Fix |
