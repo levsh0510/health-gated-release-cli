@@ -4,51 +4,42 @@
 
 ### Routing: why Nginx
 
-Nginx is the only public entry point (`localhost:8080`). The app containers publish no ports, so v1 and v2
-can run at the same time and never fight over a port.
-
-Nginx reads the address of the live app from one small file inside the proxy container:
-`server mockapp-v1-0-0:5000;`. To switch versions, the CLI rewrites that line and runs `nginx -s reload`.
-A reload is graceful. Nginx starts new workers with the new config, and the old workers finish the
-requests they already have and then exit.
-
-I chose Nginx over Traefik or HAProxy because the switch is one line in one file. It is easy to
-read, test (`nginx -t`) and explain. Traefik can switch by itself from container labels, but that
-hides the moment of the switch, and I wanted to check it myself.
+- **One public door:** Nginx on `localhost:8080`. App containers have no public port, so v1 and v2 can run side by side.
+- **The switch is one line in one file:** `server mockapp-v2-0-0:5000;`, then `nginx -s reload`.
+- **Graceful reload:** new workers take new requests, old workers **finish the requests they already have**, then exit.
+  The port never closes.
+- **Why not Traefik:** it can switch by itself from labels, but that hides the moment of the switch. Here I can see and test it (`nginx -t`).
 
 ### State: how the tool knows what is live
 
-| What | Where | Used for |
+| What | Where | Role |
 |---|---|---|
-| Where traffic goes | The Nginx upstream file | **The truth.** It decides what users get. |
-| Which version is live | `state/active.json` | A copy for people and scripts. Written atomically (temp file, then rename), so a crash never leaves a half-written file. |
-| Which containers are ours | Docker labels (`app`, `managed-by`, `version`) | Finding leftovers. A container must have both `app` and `managed-by` to be touched. |
-| One deploy at a time | `state/deploy.lock` with `flock` | The second deploy exits with code 3. The OS frees the lock if the process dies, even with `kill -9`. |
+| **Where traffic goes** | Nginx upstream file | **The truth.** It decides what users get. |
+| Which version is live | `state/active.json` | A copy. Written atomically (temp file, then rename). |
+| Which containers are ours | Docker labels | Both `app` and `managed-by` are needed to be touched. |
+| One deploy at a time | `state/deploy.lock` (`flock`) | Second deploy: exit 3. The OS frees the lock if the process dies. |
 
-At the start of every run, the CLI **reconciles**. It reads the upstream file, treats that container as live,
-checks that `localhost:8080/version` shows that version, removes every other container of ours, and repairs
-`active.json` if it disagrees. If the public check fails, it removes nothing. So after
-any crash, the fix is to run the same command again.
+**Reconcile, at the start of every run:** trust the Nginx file, check the public `/version`, remove leftover containers of ours,
+repair `active.json`. After any crash, run the same command again.
 
 ### How downtime is prevented
 
-1. Start the new container next to the old one. The old one keeps serving.
-2. Health check from inside the proxy container, so it uses the same network path real traffic will use.
-   It needs 3 passes in a row before the timeout. One lucky pass is not enough.
-3. Write the new upstream line, run `nginx -t`, then reload gracefully.
-4. Check `localhost:8080/version` from outside. If it does not return the new version within 5 seconds,
-   switch back and roll back.
-5. Wait 5 seconds (drain), then stop the old container with SIGTERM. Gunicorn finishes its open
-   requests before it exits. Then remove it.
+1. **Start the new version next to the old one.** The old one keeps serving.
+2. **Health gate:** checked from inside the proxy (same path as real traffic). **3 passes in a row** before the timeout.
+3. **The moment of the switch:** write the new upstream line, `nginx -t`, then a **graceful reload**.
+4. **Check from outside:** `localhost:8080/version` must show the new version within 5 seconds. If not, **switch back**.
+5. **Drain 5 seconds** (old container still running), then SIGTERM. Gunicorn finishes its open requests. Then remove it.
 
-Rollback is cheap, because the old version is never touched until the new one has proved itself. If the switch
-itself fails, the CLI switches back and checks that the old version is public before it removes anything.
-If it cannot prove that, it keeps both containers, prints what to check, and exits with code 4.
-If the health check fails, or Ctrl+C arrives before step 3, the CLI removes only the new container and
-exits with code 1. Ctrl+C during step 3 is ignored until the switch is done, so the switch is never half finished.
+**Why it is safe:** the old version is never touched until the new one has proved itself.
 
-Measured result: about 400 requests during a deploy, 0 failed. This is a continuity check for simple
-requests, not a proof for every kind of long connection.
+| If this happens | Result |
+|---|---|
+| Unhealthy, timeout, or Ctrl+C **before** the switch | Remove only the new container. Exit 1. Users never noticed. |
+| Ctrl+C **during** the switch | Ignored until the switch is done, so it is never half finished. |
+| Switch not visible from outside | Switch back, check the old version is public, then remove the new one. Exit 1. |
+| Switch back cannot be checked | Keep **both** containers, print what to check. Exit 4. |
+
+**Measured:** about 400 requests during a deploy, 0 failed. This is a check for simple requests, not a proof for every long connection.
 
 ## Part B: AWS enterprise mapping
 
