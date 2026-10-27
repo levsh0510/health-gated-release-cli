@@ -61,6 +61,9 @@ The same workflow as the local tool. AWS services do each job.
   to it, and there is no NAT gateway.
 - **AWS services through VPC endpoints.** Interface endpoints for ECR, CloudWatch Logs and Secrets Manager, and an S3
   gateway endpoint (ECR keeps image layers in S3). Traffic to them stays on the AWS network.
+- **Scaling:** ECS service auto scaling, min 2 tasks (one per AZ) and max 10. A target tracking policy keeps average CPU
+  near 60% (or ALB requests per target). CloudWatch watches the metric: it adds tasks fast, and removes them slowly.
+  A task that is removed is first deregistered from the ALB, so open requests finish.
 - **If the app ever needs the public internet** (a third-party API), add a NAT gateway. It is not needed here.
 
 ### CI/CD and canary deployment
